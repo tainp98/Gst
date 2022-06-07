@@ -9,7 +9,7 @@ SOURCES += \
 #    dataprobe.cpp \
 #    appsrc.cpp \
 #    changecaps.cpp \
-    changepipe.cpp \
+#    changepipe.cpp \
     multithreadpad.cpp
 
 #============= gstreamer-1.0

@@ -113,6 +113,7 @@ int main(int argc, char** argv)
 {
     GstElement *pipeline, *audio_src, *tee, *audio_queue, *audio_convert, *audio_resample, *audio_sink;
     GstElement *video_queue, *video_visual, *video_convert, *video_sink;
+    GstElement *audio_bin, *video_bin;
     GstBus *bus;
     GstMessage *msg;
     GstPad *tee_audio_pad, *tee_video_pad;
@@ -134,6 +135,8 @@ int main(int argc, char** argv)
     video_sink = gst_element_factory_make("autovideosink", "video_sink");
 
     // Create the empty pipeline
+    audio_bin = gst_bin_new("audio_bin");
+    video_bin = gst_bin_new("video_bin");
     pipeline = gst_pipeline_new("test-pipeline");
 
     // Configure elements
@@ -142,14 +145,17 @@ int main(int argc, char** argv)
 
     // Link all elements that can be automatically linked because they
     // have always pads
-    gst_bin_add_many(GST_BIN(pipeline), audio_src, tee, audio_queue, audio_convert,
-                     audio_resample, audio_sink, video_queue, video_visual,
-                     video_convert, video_sink, NULL);
-    if(gst_element_link_many(audio_src, tee, NULL) != TRUE ||
-            gst_element_link_many(audio_queue, audio_convert,
-                                  audio_resample, audio_sink, NULL) != TRUE ||
-            gst_element_link_many(video_queue, video_visual, video_convert,
-                                  video_sink, NULL) != TRUE)
+    gst_bin_add_many(GST_BIN(audio_bin), audio_queue, audio_convert, audio_resample, audio_sink, NULL);
+    gst_element_link_many(audio_queue, audio_convert, audio_resample, audio_sink, NULL);
+    gst_bin_add_many(GST_BIN(video_bin), video_queue, video_visual, video_convert, video_sink, NULL);
+    gst_element_link_many(video_queue, video_visual, video_convert, video_sink, NULL);
+    GstPad *pad = gst_element_get_static_pad(audio_queue, "sink");
+    gst_element_add_pad(audio_bin, gst_ghost_pad_new("sink", pad));
+    pad = gst_element_get_static_pad(video_queue, "sink");
+    gst_element_add_pad(video_bin, gst_ghost_pad_new("sink", pad));
+    gst_object_unref(pad);
+    gst_bin_add_many(GST_BIN(pipeline), audio_src, tee, audio_bin, video_bin, NULL);
+    if(gst_element_link_many(audio_src, tee, NULL) != TRUE)
     {
         g_printerr("Elements could not be linked\n");
         return -1;
@@ -158,10 +164,10 @@ int main(int argc, char** argv)
     // Manually link the Tee, which has Request pads
     tee_audio_pad = gst_element_get_request_pad(tee, "src_%u");
     g_print("Obtain request pad %s for audio branch.\n", gst_pad_get_name(tee_audio_pad));
-    queue_audio_pad = gst_element_get_static_pad(audio_queue, "sink");
+    queue_audio_pad = gst_element_get_static_pad(audio_bin, "sink");
     tee_video_pad = gst_element_get_request_pad(tee, "src_%u");
     g_print("Obtain request pad %s for video branch.\n", gst_pad_get_name(tee_video_pad));
-    queue_video_pad = gst_element_get_static_pad(video_queue, "sink");
+    queue_video_pad = gst_element_get_static_pad(video_bin, "sink");
 
     gst_pad_link(tee_audio_pad, queue_audio_pad);
     gst_pad_link(tee_video_pad, queue_video_pad);

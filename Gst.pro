@@ -7,7 +7,10 @@ SOURCES += \
 #        main.cpp \
 #    findtype.cpp \
 #    dataprobe.cpp \
-    appsrc.cpp
+#    appsrc.cpp \
+#    changecaps.cpp \
+    changepipe.cpp \
+    multithreadpad.cpp
 
 #============= gstreamer-1.0
 INCLUDEPATH += /usr/local/include/gstreamer-1.0

@@ -1,8 +1,7 @@
 #include <gst/gst.h>
 
 static gchar *opt_effects = NULL;
-#define DEFAULT_EFFECT "identity, exclusion, navigationtest,"\
-    "agingtv, videoflip, vertigotv, gaussianblur, shagadelictv, edgetv"
+#define DEFAULT_EFFECT "identity"
 
 static GstPad *blockpad;
 static GstElement *conv_before;
@@ -144,7 +143,7 @@ int main(int argc, char** argv)
     for(e = effect_names; e != NULL && *e != NULL; ++e)
     {
         GstElement *el;
-        el = gst_element_factory_make(*e, NULL);
+        el = gst_element_factory_make(*e, *e);
         if(el)
         {
             g_print("Adding effect '%s'\n", *e);
@@ -153,7 +152,7 @@ int main(int argc, char** argv)
     }
 
     pipeline = gst_pipeline_new("pipeline");
-    src = gst_element_factory_make("videotestsrc", NULL);
+    src = gst_element_factory_make("videotestsrc", "video-src");
     g_object_set(src, "is-live", TRUE, NULL);
     filter1 = gst_element_factory_make("capsfilter", NULL);
     gst_util_set_object_arg(G_OBJECT(filter1), "caps",
@@ -163,9 +162,9 @@ int main(int argc, char** argv)
                             "YUV9, YVU9, IYU1 }");
     q1 = gst_element_factory_make("queue", NULL);
     blockpad = gst_element_get_static_pad(q1, "src");
-    conv_before = gst_element_factory_make("videoconvert", NULL);
-    effect = (GstElement*)g_queue_pop_head(&effects);
-    cur_effect = effect;
+    conv_before = gst_element_factory_make("videoconvert", "conv_before");
+    cur_effect = (GstElement*)g_queue_pop_head(&effects);
+//    cur_effect = effect;
     conv_after = gst_element_factory_make("videoconvert", NULL);
     q2 = gst_element_factory_make("queue", NULL);
     filter2 = gst_element_factory_make("capsfilter", NULL);
@@ -175,9 +174,9 @@ int main(int argc, char** argv)
                             "BGRA, ARGB, ABGR, RGB, BGR}");
     sink = gst_element_factory_make("ximagesink", NULL);
 
-    gst_bin_add_many(GST_BIN(pipeline), src, filter1, q1, conv_before, effect, conv_after,
+    gst_bin_add_many(GST_BIN(pipeline), src, filter1, q1, conv_before, cur_effect, conv_after,
                      q2, sink, NULL);
-    gst_element_link_many(src, filter1, q1, conv_before, effect, conv_after,
+    gst_element_link_many(src, filter1, q1, conv_before, cur_effect, conv_after,
                           q2, sink, NULL);
     gst_element_set_state(pipeline, GST_STATE_PLAYING);
 

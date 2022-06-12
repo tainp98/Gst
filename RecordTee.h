@@ -6,6 +6,7 @@
 static GstPadProbeReturn pad_probe_cb(GstPad *pad, GstPadProbeInfo *info, gpointer user_data);
 static gboolean timeout_cb(gpointer user_data);
 static gboolean bus_cb(GstBus *bus, GstMessage *msg, gpointer data);
+static void on_pad_added(GstElement *element, GstPad *pad, gpointer data);
 class RecordTee
 {
 public:
@@ -27,6 +28,7 @@ private:
     friend GstPadProbeReturn pad_probe_cb(GstPad *, GstPadProbeInfo *, gpointer);
     friend gboolean timeout_cb(gpointer);
     friend gboolean bus_cb(GstBus *, GstMessage *, gpointer);
+    friend void on_pad_added(GstElement *element, GstPad *pad, gpointer data);
 };
 
 #endif // RECORDTEE_H

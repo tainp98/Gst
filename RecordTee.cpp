@@ -106,6 +106,17 @@ static gboolean bus_cb(GstBus *bus, GstMessage *msg, gpointer data)
     return TRUE;
 }
 
+static void on_pad_added(GstElement *element, GstPad *pad, gpointer data)
+{
+    RecordTee* recordTee = (RecordTee*)data;
+    GstPad *sinkpad;
+    GstElement *decoder = (GstElement*)recordTee->nvh265enc_;
+    g_print("Dynamic pad created, linking demuxer/decoder\n");
+    sinkpad = gst_element_get_static_pad(decoder, "sink");
+    gst_pad_link(pad, sinkpad);
+    gst_object_unref(sinkpad);
+}
+
 RecordTee::RecordTee()
 {
 
@@ -118,13 +129,13 @@ RecordTee::~RecordTee()
 
 void RecordTee::init()
 {
-    gst_init(NULL, NULL);
+
     filePath_ = "file";
     src_ = gst_element_factory_make("filesrc", "src");
-    g_object_set(src_, "location", "/home/vietph/Videos/video/ir.m4e", NULL);
+    g_object_set(src_, "location", "/home/tainp/Videos/video.mp4", NULL);
     decodebin_ = gst_element_factory_make("decodebin", "decode");
     videoConvert1_ = gst_element_factory_make("videoconvert", "video-convert1");
-    nvh265enc_ = gst_element_factory_make("nvh265enc", "nvh265enc");
+    nvh265enc_ = gst_element_factory_make("x265enc", "x265enc");
     h265parse_ = gst_element_factory_make("h265parse", "h265parse");
     tee_ = gst_element_factory_make("tee", "tee");
     videoQueue_ = gst_element_factory_make("queue", NULL);
@@ -140,23 +151,32 @@ void RecordTee::init()
 
     // create pipeline
     pipeline_ = gst_pipeline_new("pipe");
-    gst_bin_add_many(GST_BIN(pipeline_), src_, decodebin_, videoConvert1_, nvh265enc_,
-                     h265parse_, tee_, videoQueue_, fileQueue_, avdecH265_,
+    gst_bin_add_many(GST_BIN(pipeline_), src_, decodebin_, nvh265enc_, h265parse_,
+                     tee_, videoQueue_, fileQueue_, avdecH265_,
                      videoConvert2_, mpegtsmux_, videoSink_, fileSink_, NULL);
-    if(gst_element_link_many(src_, tee_, NULL) != TRUE
+//    gst_bin_add_many(GST_BIN(pipeline_), src_, decodebin_, videoSink_, NULL);
+    if(gst_element_link_many(src_, decodebin_, NULL) != TRUE
             )
     {
         g_printerr("Elements could not be linked1\n");
         return;
     }
-    if(gst_element_link_many(videoQueue_, avdecH265_, videoConvert2_, videoSink_, NULL) != TRUE)
+
+    if(gst_element_link_many(nvh265enc_, h265parse_, tee_, NULL) != TRUE)
     {
         g_printerr("Elements could not be linked2\n");
         return;
     }
-    if(gst_element_link_many(fileQueue_, mpegtsmux_, fileSink_, NULL) != TRUE)
+    g_signal_connect (decodebin_, "pad-added", G_CALLBACK (on_pad_added), this);
+
+    if(gst_element_link_many(videoQueue_, avdecH265_, videoConvert2_, videoSink_, NULL) != TRUE)
     {
         g_printerr("Elements could not be linked3\n");
+        return;
+    }
+    if(gst_element_link_many(fileQueue_, mpegtsmux_, fileSink_, NULL) != TRUE)
+    {
+        g_printerr("Elements could not be linked4\n");
         return;
     }
     // Manually link the tee
@@ -174,6 +194,6 @@ void RecordTee::start()
     gst_element_set_state(pipeline_, GST_STATE_PLAYING);
     loop_ = g_main_loop_new(NULL, FALSE);
     gst_bus_add_watch(GST_ELEMENT_BUS(pipeline_), bus_cb, this);
-    g_timeout_add_seconds(10, timeout_cb, this);
+    g_timeout_add_seconds(2, timeout_cb, this);
     g_main_loop_run(loop_);
 }

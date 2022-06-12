@@ -134,8 +134,9 @@
 //}
 #include <RecordTee.h>
 
-int main()
+int main(int argc, char** argv)
 {
+    gst_init(&argc, &argv);
     RecordTee record;
     record.init();
     record.start();

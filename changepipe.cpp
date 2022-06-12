@@ -108,6 +108,16 @@ static gboolean bus_cb(GstBus *bus, GstMessage *msg, gpointer data)
     return TRUE;
 }
 
+static void on_pad_added(GstElement *element, GstPad *pad, gpointer data)
+{
+    GstPad *sinkpad;
+    GstElement *decoder = (GstElement*)data;
+    g_print("Dynamic pad created, linking demuxer/decoder\n");
+    sinkpad = gst_element_get_static_pad(decoder, "sink");
+    gst_pad_link(pad, sinkpad);
+    gst_object_unref(sinkpad);
+}
+
 int main(int argc, char** argv)
 {
     GOptionEntry options[] = {
@@ -118,7 +128,7 @@ int main(int argc, char** argv)
     GOptionContext *ctx;
     GError *err = NULL;
     GMainLoop *loop;
-    GstElement *src, *q1, *q2, *effect, *filter1, *filter2, *sink;
+    GstElement *src, *q1, *q2, *effect, *filter1, *filter2, *sink, *decodebin, *videoconvert;
     gchar **effect_names, **e;
 
     ctx = g_option_context_new("");
@@ -152,8 +162,10 @@ int main(int argc, char** argv)
     }
 
     pipeline = gst_pipeline_new("pipeline");
-    src = gst_element_factory_make("videotestsrc", "video-src");
-    g_object_set(src, "is-live", TRUE, NULL);
+    src = gst_element_factory_make("filesrc", "video-src");
+    g_object_set(src, "location", "/home/tainp/Videos/video.mp4", NULL);
+    decodebin = gst_element_factory_make("decodebin", "decode");
+    videoconvert = gst_element_factory_make("videoconvert", "video-convert");
     filter1 = gst_element_factory_make("capsfilter", NULL);
     gst_util_set_object_arg(G_OBJECT(filter1), "caps",
                             "video/x-raw, width=320, height=240, "
@@ -174,16 +186,19 @@ int main(int argc, char** argv)
                             "BGRA, ARGB, ABGR, RGB, BGR}");
     sink = gst_element_factory_make("ximagesink", NULL);
 
-    gst_bin_add_many(GST_BIN(pipeline), src, filter1, q1, conv_before, cur_effect, conv_after,
+    gst_bin_add_many(GST_BIN(pipeline), src, decodebin, videoconvert, filter1, q1, conv_before, cur_effect, conv_after,
                      q2, sink, NULL);
-    gst_element_link_many(src, filter1, q1, conv_before, cur_effect, conv_after,
+    gst_element_link_many(src, decodebin, NULL);
+    gst_element_link_many(filter1, q1, conv_before, cur_effect, conv_after,
                           q2, sink, NULL);
+
+    g_signal_connect (decodebin, "pad-added", G_CALLBACK (on_pad_added), filter1);
     gst_element_set_state(pipeline, GST_STATE_PLAYING);
 
     loop = g_main_loop_new(NULL, FALSE);
     gst_bus_add_watch(GST_ELEMENT_BUS(pipeline), bus_cb, loop);
 
-    g_timeout_add_seconds(1, timeout_cb, loop);
+//    g_timeout_add_seconds(1, timeout_cb, loop);
     g_main_loop_run(loop);
 
     gst_element_set_state(pipeline, GST_STATE_NULL);

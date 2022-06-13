@@ -9,12 +9,13 @@ SOURCES += \
 #    dataprobe.cpp \
 #    appsrc.cpp
 #    changecaps.cpp \
-#    changepipe.cpp
+#    changepipe.cpp \
 #    multithreadpad.cpp
     RecordTee.cpp
+#    dynamicrecord.cpp
 
 #============= gstreamer-1.0
-INCLUDEPATH += /usr/include/gstreamer-1.0
+INCLUDEPATH += /usr/local/include/gstreamer-1.0
 INCLUDEPATH += /usr/lib/x86_64-linux-gnu/gstreamer-1.0/include
 INCLUDEPATH += /usr/include/glib-2.0
 INCLUDEPATH += /usr/lib/x86_64-linux-gnu/glib-2.0/include

@@ -137,8 +137,8 @@
 int main(int argc, char** argv)
 {
     gst_init(&argc, &argv);
-    RecordTee record;
-    record.init();
-    record.start();
+    RecordTee *record = RecordTee::recordTee();
+    record->init();
+    record->start();
     return 0;
 }

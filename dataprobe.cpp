@@ -1,9 +1,17 @@
 #include <gst/gst.h>
 #include <gst/app/gstappsrc.h>
+#include <unistd.h>
+#include <iostream>
+bool change = true;
+bool record = true;
+GstElement *sink,*pipeline, *mux;
 static GstPadProbeReturn
 cb_have_data(GstPad *pad, GstPadProbeInfo *info,
              gpointer user_data)
 {
+//    std::cout << "have data\n";
+    static int count = 0;
+    static int count2 = 0;
     gint x, y;
     GstMapInfo map;
     guint16 *ptr, t;
@@ -16,30 +24,72 @@ cb_have_data(GstPad *pad, GstPadProbeInfo *info,
     buffer = gst_buffer_make_writable(buffer);
 
     if(buffer == NULL)
-        return GST_PAD_PROBE_OK;
-    /* Mapping a buffer can fail */
-    if(gst_buffer_map(buffer, &map, GST_MAP_WRITE))
     {
-        ptr  = (guint16*)map.data;
-        for(y = 0; y < height; y++)
-        {
-            for(x = 0; x < width/2; x++)
-            {
-                t = ptr[width-1-x];
-                ptr[width-1-x] = ptr[x];
-                ptr[x] = t;
-            }
-            ptr += width;
-        }
-        gst_buffer_unmap(buffer, &map);
+        std::cout << "null buffer\n";
+        return GST_PAD_PROBE_OK;
     }
+    /* Mapping a buffer can fail */
+//    if(gst_buffer_map(buffer, &map, GST_MAP_WRITE))
+//    {
+//        ptr  = (guint16*)map.data;
+//        for(y = 0; y < height; y++)
+//        {
+//            for(x = 0; x < width/2; x++)
+//            {
+//                t = ptr[width-1-x];
+//                ptr[width-1-x] = ptr[x];
+//                ptr[x] = t;
+//            }
+//            ptr += width;
+//        }
+//        gst_buffer_unmap(buffer, &map);
+//    }
+    if(count % 200 == 0)
+    {
+        change = !change;
+
+    }
+    if(change)
+    {
+//        GST_PAD_PROBE_INFO_DATA(info) = NULL;
+        if(record)
+        {
+            gst_element_send_event(sink, gst_event_new_eos());
+            usleep(1000);
+            gst_element_set_state(sink, GST_STATE_NULL);
+            gst_bin_remove(GST_BIN(pipeline), sink);
+
+            record = false;
+
+        }
+
+
+    }
+    else
+    {
+        if(!record)
+        {
+            sink = gst_element_factory_make("filesink", NULL);
+            std::string fileName = "vd";
+            fileName  = fileName + "_" + std::to_string(count) + ".mp4";
+            g_object_set(sink, "location", fileName.c_str(), NULL);
+            g_object_set(sink, "location", fileName.c_str(), NULL);
+            gst_bin_add(GST_BIN(pipeline), sink);
+            gst_element_link(mux, sink);
+            gst_element_set_state(sink, GST_STATE_PLAYING);
+            record = true;
+        }
+//        GST_PAD_PROBE_INFO_DATA(info) = buffer;
+    }
+    count++;
+    std::cout << "count = " << count << "\n";
     GST_PAD_PROBE_INFO_DATA(info) = buffer;
-    return GST_PAD_PROBE_OK;
+    return GST_PAD_PROBE_REMOVE;
 }
 int main(int argc, char** argv)
 {
     GMainLoop *loop;
-    GstElement *pipeline, *src, *sink, *filter, *csp;
+    GstElement *src, *filter, *csp, *encode, *queue, *parser;
     GstCaps *filtercaps;
     GstPad *pad;
     gst_init(&argc, &argv);
@@ -49,10 +99,16 @@ int main(int argc, char** argv)
     src = gst_element_factory_make("videotestsrc", "src");
     filter = gst_element_factory_make("capsfilter", "filer");
     csp = gst_element_factory_make("videoconvert", "csp");
-    sink = gst_element_factory_make("xvimagesink", "sink");
+    encode = gst_element_factory_make("nvh265enc", "encode");
+//    queue = gst_element_factory_make("queue", "queue");
+    parser = gst_element_factory_make("h265parse", "parser");
+//    g_object_set(parser, "config-interval", 10, NULL);b
+    mux = gst_element_factory_make("mpegtsmux", "mux");
+    sink = gst_element_factory_make("filesink", NULL);
+    g_object_set(sink, "location", "vd.mp4", NULL);
 
-    gst_bin_add_many(GST_BIN(pipeline), src, filter, csp, sink, NULL);
-    gst_element_link_many(src, filter, csp, sink, NULL);
+    gst_bin_add_many(GST_BIN(pipeline), src, filter, csp, encode, parser, mux, sink, NULL);
+    gst_element_link_many(src, filter, csp, encode, parser, mux, sink, NULL);
     filtercaps = gst_caps_new_simple("video/x-raw",
                                      "format", G_TYPE_STRING, "RGB16",
                                      "width", G_TYPE_INT, 1000,

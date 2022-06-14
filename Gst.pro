@@ -1,5 +1,5 @@
 TEMPLATE = app
-CONFIG += console c++11
+CONFIG += console c++17
 CONFIG -= app_bundle
 CONFIG -= qt
 
@@ -11,7 +11,8 @@ SOURCES += \
 #    changecaps.cpp \
 #    changepipe.cpp \
 #    multithreadpad.cpp
-    RecordTee.cpp
+    RecordTee.cpp \
+    StreamingManager.cpp
 #    dynamicrecord.cpp
 
 #============= gstreamer-1.0
@@ -23,4 +24,5 @@ LIBS += -lgstapp-1.0 -lgstbase-1.0 -lgstreamer-1.0 -lgobject-2.0 -lglib-2.0 -lgs
 
 HEADERS += \
 #    multithreadpad.h
-    RecordTee.h
+    RecordTee.h \
+    StreamingManager.h

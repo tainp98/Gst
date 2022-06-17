@@ -11,8 +11,11 @@ SOURCES += \
 #    changecaps.cpp \
 #    changepipe.cpp \
 #    multithreadpad.cpp
-    RecordTee.cpp \
-    StreamingManager.cpp
+    StreamingManager.cpp \
+#    RecordTee.cpp \
+#    AddRemoveRecord.cpp \
+    SplitMuxSink.cpp \
+    DirTool.cpp
 #    dynamicrecord.cpp
 
 #============= gstreamer-1.0
@@ -24,5 +27,8 @@ LIBS += -lgstapp-1.0 -lgstbase-1.0 -lgstreamer-1.0 -lgobject-2.0 -lglib-2.0 -lgs
 
 HEADERS += \
 #    multithreadpad.h
-    RecordTee.h \
-    StreamingManager.h
+    StreamingManager.h \
+#    RecordTee.h \
+#    AddRemoveRecord.h \
+    SplitMuxSink.h \
+    DirTool.h

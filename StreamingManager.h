@@ -10,7 +10,6 @@
 #include <RollingFixedGenericBuffer.h>
 #include <StreamConfig.h>
 #include <QDTApplication.h>
-#include <QDTContext.h>
 
 namespace vaplatform {
 
@@ -30,7 +29,6 @@ public:
     static void wrapperOnNeedData(GstAppSrc* _appSrc, guint _size, gpointer _uData);
     static void wrapperOnEnoughData(GstAppSrc* _appSrc, gpointer _uData);
     static gboolean wrapperOnSeekData(GstAppSrc* _appSrc, guint64 _offset, gpointer _uData);
-    static GstPadProbeReturn wrapTeeSavePadProbeCb(GstPad *pad, GstPadProbeInfo *info, gpointer user_data);
 
     bool isInitialized();
 
@@ -38,10 +36,9 @@ public:
     void setDrawShipDetect(bool drawShipDetect);
     void setDrawTrackObject(bool drawTrackObject);
     void setRecord(bool recordMode);
+    std::string saveFolder() const;
 
 private:
-    void stopRecord();
-    void startRecord();
     void run();
 
     int initPipeline();
@@ -51,7 +48,6 @@ private:
     void onNeedData(GstAppSrc* _appSrc, guint _size, gpointer _uData);
     void onEnoughData(GstAppSrc* _appSrc, gpointer _uData);
     gboolean onSeekData(GstAppSrc* _appSrc, guint64 _offset, gpointer _uData);
-    GstPadProbeReturn onTeeSavePadProbeCb(GstPad *pad, GstPadProbeInfo *info, gpointer user_data);
     std::string getFileNameByTime();
     void correctTimeLessThanTen(std::string &_inputStr, int _time);
 
@@ -63,11 +59,12 @@ private:
     GstBus* bus_;
     GError* gErr_ = nullptr;
     guint busWatchId_;
+    guint kbSize_ = 10000;
+    std::string saveFolder_;
     GstElement* appSrc_;
     GstElement *videoconvert_, *omxh265enc_, *h265parse_, *tee_, *streamQueue_,
-    *rtph265pay_, *saveQueue_, *mpegtsmux_, *fileSink_, *udpSink_;
+    *rtph265pay_, *saveQueue_, *mpegtsmux_, *fileSink_, *udpSink_, *filterCaps_, *splitMuxSink_;
     GstPad *teeStreamPad_, *teeSavePad_;
-    QDTContext* context_ = nullptr;
     std::shared_ptr<StreamConfig> streamConfig_ = nullptr;
     std::atomic<bool> isRunning_{false};
     std::atomic<bool> stopRequired_{false};

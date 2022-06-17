@@ -4,6 +4,7 @@
 #include <QDTApplication.h>
 #include <DrawTool.h>
 #include <Monitoring.h>
+#include <DirTool.h>
 namespace vaplatform
 {
 
@@ -32,7 +33,6 @@ void StreamingManager::setContext(QDTGeneralManager *generalManager)
                   streamConfig_->getProperty(StreamProperty::HOSTPORT).toInt());
     streamingBuffer_ = generalManager->vCacheManager()->getStreamingDataBuffer();
     streamingBuffer_->registerReceiver("Stream");
-    context_ = app_->context();
 }
 
 void StreamingManager::reconfigure(std::shared_ptr<StreamConfig> streamConfig)
@@ -129,12 +129,6 @@ gboolean StreamingManager::wrapperOnSeekData(GstAppSrc *_appSrc, guint64 _offset
     return itself->onSeekData(_appSrc, _offset, _uData);
 }
 
-GstPadProbeReturn StreamingManager::wrapTeeSavePadProbeCb(GstPad *pad, GstPadProbeInfo *info, gpointer _uData)
-{
-    StreamingManager *itself = (StreamingManager *)_uData;
-    return itself->onTeeSavePadProbeCb(pad, info, _uData);
-}
-
 bool StreamingManager::isInitialized()
 {
     return ready_;
@@ -157,56 +151,12 @@ void StreamingManager::setDrawTrackObject(bool drawTrackObject)
 
 void StreamingManager::setRecord(bool recordMode)
 {
-    if(recordMode == true)
-    {
-        if(recording_)
-        {
-            QDTLog::debug("Pipeline Is Recording");
-            return;
-        }
-        this->startRecord();
-    }
-    else
-    {
-        if(!recording_)
-        {
-            QDTLog::debug("Pipeline Already Stop Record");
-            return;
-        }
-        this->stopRecord();
-    }
+
 }
 
-void StreamingManager::stopRecord()
+std::string StreamingManager::saveFolder() const
 {
-    gst_pad_add_probe(teeSavePad_, GST_PAD_PROBE_TYPE_BLOCK_DOWNSTREAM,
-                      wrapTeeSavePadProbeCb, this, NULL);
-    std::cout << "TimeoutCallBack - Turn off record\n";
-    recording_ = false;
-}
-
-void StreamingManager::startRecord()
-{
-    std::cout << "=============================== TimeoutCallBack - Turn on record\n";
-
-    saveQueue_ = gst_element_factory_make("queue", NULL);
-    mpegtsmux_ = gst_element_factory_make("mpegtsmux", NULL);
-    fileSink_ = gst_element_factory_make("filesink", NULL);
-    std::string fileName = this->getFileNameByTime();
-    fileName  = fileName + ".mp4";
-    g_object_set(fileSink_, "location", fileName.c_str(), NULL);
-    gst_bin_add_many(GST_BIN(pipeline_), saveQueue_, mpegtsmux_, fileSink_, NULL);
-    gst_element_link_many(saveQueue_, mpegtsmux_, fileSink_, NULL);
-    teeSavePad_ = gst_element_get_request_pad(tee_, "src_%u");
-    GstPad *queueSavePad = gst_element_get_static_pad(saveQueue_, "sink");
-
-    gst_pad_link(teeSavePad_, queueSavePad);
-    gst_object_unref(queueSavePad);
-
-    gst_element_set_state(saveQueue_, GST_STATE_PLAYING);
-    gst_element_set_state(mpegtsmux_, GST_STATE_PLAYING);
-    gst_element_set_state(fileSink_, GST_STATE_PLAYING);
-    recording_ = true;
+    return saveFolder_;
 }
 
 void StreamingManager::onEnoughData(GstAppSrc *_appSrc, gpointer _uData)
@@ -232,33 +182,6 @@ gboolean StreamingManager::onSeekData(GstAppSrc *_appSrc, guint64 _offset, gpoin
     return TRUE;
 }
 
-GstPadProbeReturn StreamingManager::onTeeSavePadProbeCb(GstPad *pad, GstPadProbeInfo *info, gpointer user_data)
-{
-    GstPad *srcpad, *sinkpad;
-    g_print("blockpad is block now\n");
-    // remove the probe first
-//    gst_pad_remove_probe(pad, GST_PAD_PROBE_INFO_ID(info));
-
-    // push EOS into the element, the probe will be fired when the
-    // EOS leaves the effect and it has thus drained all of its data
-    sinkpad = gst_element_get_static_pad(saveQueue_, "sink");
-    gst_pad_unlink(teeSavePad_, sinkpad);
-    gst_element_release_request_pad(tee_, teeSavePad_);
-    gst_object_unref(teeSavePad_);
-
-    gst_element_send_event(mpegtsmux_, gst_event_new_eos());
-    gst_object_unref(sinkpad);
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
-    gst_element_set_state(saveQueue_, GST_STATE_NULL);
-    gst_element_set_state(mpegtsmux_, GST_STATE_NULL);
-    gst_element_set_state(fileSink_, GST_STATE_NULL);
-    gst_bin_remove(GST_BIN(pipeline_), saveQueue_);
-    gst_bin_remove(GST_BIN(pipeline_), mpegtsmux_);
-    gst_bin_remove(GST_BIN(pipeline_), fileSink_);
-    return GST_PAD_PROBE_REMOVE;
-}
-
 int StreamingManager::initPipeline()
 {
     //  pipeline__str = "appsrc name=mysrc stream-type=0 is-live=true format=3 ! videoconvert ! omxh265enc control-rate=2 target-bitrate="
@@ -274,21 +197,26 @@ int StreamingManager::initPipeline()
 
     // stream
     appSrc_ = gst_element_factory_make("appsrc", "mysrc");
-    videoconvert_ = gst_element_factory_make("videoconvert", "videoconvert");
     omxh265enc_ = gst_element_factory_make("omxh265enc", "omxh265enc");
     h265parse_ = gst_element_factory_make("h265parse", "h265parse");
     tee_ = gst_element_factory_make("tee", "tee");
     streamQueue_ = gst_element_factory_make("queue", "streamqueue");
+    saveQueue_ = gst_element_factory_make("queue", "savequeue");
     rtph265pay_ = gst_element_factory_make("rtph265pay", "rtph265pay");
     udpSink_ = gst_element_factory_make("udpsink", "udpsink");
-    // create element for save video
-    saveQueue_ = gst_element_factory_make("queue", NULL);
-    mpegtsmux_ = gst_element_factory_make("mpegtsmux", NULL);
-    fileSink_ = gst_element_factory_make("filesink", NULL);
+    splitMuxSink_ = gst_element_factory_make("splitmuxsink", "splitmuxsink");
+    mpegtsmux_ = gst_element_factory_make("mp4mux", "mux");
+    printf("stop0\n");
+    filterCaps_ = gst_element_factory_make("capsfilter", NULL);
+    GstCaps *capsFilter;
+    capsFilter = gst_caps_new_simple ("video/x-h265",
+                   "stream-format", G_TYPE_STRING, "hvc1",
+                   NULL);
+    g_object_set (G_OBJECT (filterCaps_), "caps", capsFilter, NULL);
+    gst_caps_unref (capsFilter);
 
     // set properties for element
     // set appsrc
-//    g_object_set(appSrc_, "stream-type", 0, "is-live", TRUE, "format", 3, NULL);
     g_object_set(G_OBJECT(appSrc_),
                  "is-live", FALSE,
                  "num-buffers", -1,
@@ -314,6 +242,9 @@ int StreamingManager::initPipeline()
                  "target-bitrate", streamConfig_->getProperty(StreamProperty::BITRATE).toInt(),
                  NULL);
 
+    // h265parse
+    g_object_set(h265parse_, "config-interval", 1, NULL);
+
     // set rtph265pay
     g_object_set(rtph265pay_, "mtu", 4096,
                  "config-interval", 1, NULL);
@@ -324,11 +255,22 @@ int StreamingManager::initPipeline()
                  "port", streamConfig_->getProperty(StreamProperty::HOSTPORT).toInt(),
                  "async", TRUE, "sync", TRUE, NULL);
 
+    // set splitmuxsink
+    saveFolder_ = getFileNameByTime();
+    DirTool::makeDir(saveFolder_);
+    printf("SaveFolder = %s\n", saveFolder_.c_str());
+    std::string filePattern = saveFolder_ + "/%04d-video.mp4";
+    g_object_set(G_OBJECT(splitMuxSink_),
+                 "muxer", mpegtsmux_,
+                 "location", filePattern.c_str(),
+                 "max-size-bytes", kbSize_*1024, NULL);
+
     // create pipeline and link manually
     pipeline_ = gst_pipeline_new("mypipeline");
-    gst_bin_add_many(GST_BIN(pipeline_), appSrc_, videoconvert_, omxh265enc_,
-                     h265parse_, tee_, streamQueue_, rtph265pay_, udpSink_, NULL);
-    if(gst_element_link_many(appSrc_, videoconvert_, omxh265enc_, h265parse_, tee_, NULL) != TRUE)
+    gst_bin_add_many(GST_BIN(pipeline_), appSrc_, omxh265enc_,h265parse_, tee_,
+                     streamQueue_, rtph265pay_, udpSink_,
+                     saveQueue_, mpegtsmux_, splitMuxSink_, NULL);
+    if(gst_element_link_many(appSrc_, omxh265enc_, h265parse_, tee_, NULL) != TRUE)
     {
         g_print("Link fail: appsrc, videoconvert, omxh265enc, h265parse, tee\n");
         return -1;
@@ -336,13 +278,21 @@ int StreamingManager::initPipeline()
 
     if(gst_element_link_many(streamQueue_, rtph265pay_, udpSink_, NULL) != TRUE)
     {
-        g_print("Link fail: streamQueue, rtph265pay, udpSink,\n");
+        g_print("Link fail: streamQueue, rtph265pay, udpSink\n");
+        return -1;
+    }
+    if(gst_element_link_many(saveQueue_, mpegtsmux_, splitMuxSink_, NULL) != TRUE)
+    {
+        g_print("Link fail: saveQueue, mpegtsmux, splitMuxSink\n");
         return -1;
     }
 
     teeStreamPad_ = gst_element_get_request_pad(tee_, "src_%u");
     GstPad *queueStreamPad = gst_element_get_static_pad(streamQueue_, "sink");
     gst_pad_link(teeStreamPad_, queueStreamPad);
+    teeSavePad_ = gst_element_get_request_pad(tee_, "src_%u");
+    queueStreamPad = gst_element_get_static_pad(saveQueue_, "sink");
+    gst_pad_link(teeSavePad_, queueStreamPad);
     gst_object_unref(queueStreamPad);
 
 //    pipelineStr_ = "appsrc name=mysrc stream-type=0 is-live=true format=3 ! videoconvert ! omxh265enc control-rate=2 target-bitrate=" + std::to_string(streamConfig_->getProperty(StreamProperty::BITRATE).toInt()) +

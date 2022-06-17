@@ -132,13 +132,13 @@
 //    g_main_loop_unref(loop);
 //    return 0;
 //}
-#include <RecordTee.h>
+#include <SplitMuxSink.h>
 
 int main(int argc, char** argv)
 {
     gst_init(&argc, &argv);
-    RecordTee *record = RecordTee::recordTee();
-    record->init();
-    record->start();
+    SplitMuxSink addremove;
+    addremove.init(argc, argv);
+    addremove.start();
     return 0;
 }

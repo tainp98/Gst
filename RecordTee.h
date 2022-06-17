@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <iostream>
 #include <mutex>
+#define GST_CAPS_FEATURE_MEMORY_DMABUF "memory:DMABuf"
 static GstPadProbeReturn event_probe_cb(GstPad *pad, GstPadProbeInfo *info, gpointer user_data);
 //static GstPadProbeReturn pad_probe_cb(GstPad *pad, GstPadProbeInfo *info, gpointer user_data);
 static GstPadProbeReturn pad_probe_cb2(GstPad *pad, GstPadProbeInfo *info, gpointer user_data);
@@ -19,6 +20,8 @@ public:
     void start();
     static RecordTee* recordTee();
     static GstPadProbeReturn pad_probe_cb(GstPad *pad, GstPadProbeInfo *info, gpointer user_data);
+    static GstPadProbeReturn event_probe_cb(GstPad *pad, GstPadProbeInfo *info, gpointer user_data);
+    static void cb_need_data (GstElement *appsrc, guint unused_size, gpointer user_data);
     void stopRecording();
     void startRecording();
 private:
@@ -32,11 +35,11 @@ private:
     std::string filePath_;
     GMainLoop *loop_;
     GstElement *pipeline_, *tee_, *videoQueue_, *fileQueue_;
-    GstElement *src_, *decodebin_, *videoConvert1_, *nvh265enc_, *h265parse_;
-    GstElement *avdecH265_, *mpegtsmux_, *videoConvert2_;
+    GstElement *src_, *decodebin_, *videoConvert1_, *nvh265enc_, *h265parse_, *qtdemux_, *h264parse_, *omxh264dec_, *appSrc_;
+    GstElement *avdecH265_, *mpegtsmux_, *videoConvert2_, *filterCaps_, *filterCaps1_, *rtph265pay_, *udpSink_;
     GstElement *videoSink_, *fileSink_;
 
-    GstPad *teeVideoPad_, *teeFilePad_;
+    GstPad *teeVideoPad_, *teeFilePad_, *mpegSinkPad_;
     friend GstPadProbeReturn event_probe_cb(GstPad *, GstPadProbeInfo *, gpointer);
 //    friend GstPadProbeReturn pad_probe_cb(GstPad *, GstPadProbeInfo *, gpointer);
     friend GstPadProbeReturn pad_probe_cb2(GstPad *, GstPadProbeInfo *, gpointer);

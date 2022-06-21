@@ -132,12 +132,12 @@
 //    g_main_loop_unref(loop);
 //    return 0;
 //}
-#include <SplitMuxSink.h>
+#include <ChangeSource.h>
 
 int main(int argc, char** argv)
 {
     gst_init(&argc, &argv);
-    SplitMuxSink addremove;
+    ChangeSource addremove;
     addremove.init(argc, argv);
     addremove.start();
     return 0;

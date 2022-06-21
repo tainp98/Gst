@@ -2,16 +2,14 @@
 #include <VCacheManager.h>
 #include <ConfigManager.h>
 #include <QDTApplication.h>
-#include <DrawTool.h>
 #include <Monitoring.h>
-#include <DirTool.h>
 namespace vaplatform
 {
 
 StreamingManager::StreamingManager(QDTApplication *app, QDTGeneralManager *generalManager)
     : QDTManager(app, generalManager)
 {
-    gst_init(0, nullptr);
+    gst_init(nullptr, nullptr);
     loop_ = g_main_loop_new(NULL, FALSE);
 }
 
@@ -129,6 +127,12 @@ gboolean StreamingManager::wrapperOnSeekData(GstAppSrc *_appSrc, guint64 _offset
     return itself->onSeekData(_appSrc, _offset, _uData);
 }
 
+GstPadProbeReturn StreamingManager::wrapDataPadProbeCb(GstPad *pad, GstPadProbeInfo *info, gpointer user_data)
+{
+    StreamingManager *itself = (StreamingManager *)user_data;
+    return itself->onDataPadProbeCb(pad, info, user_data);
+}
+
 bool StreamingManager::isInitialized()
 {
     return ready_;
@@ -182,6 +186,15 @@ gboolean StreamingManager::onSeekData(GstAppSrc *_appSrc, guint64 _offset, gpoin
     return TRUE;
 }
 
+GstPadProbeReturn StreamingManager::onDataPadProbeCb(GstPad *pad, GstPadProbeInfo *info, gpointer user_data)
+{
+    gst_pad_remove_probe(pad, GST_PAD_PROBE_INFO_ID(info));
+    GstCaps *caps = gst_pad_get_current_caps (pad);
+    printCaps(caps, "      ");
+    gst_caps_unref (caps);
+    return GST_PAD_PROBE_PASS;
+}
+
 int StreamingManager::initPipeline()
 {
     //  pipeline__str = "appsrc name=mysrc stream-type=0 is-live=true format=3 ! videoconvert ! omxh265enc control-rate=2 target-bitrate="
@@ -197,23 +210,16 @@ int StreamingManager::initPipeline()
 
     // stream
     appSrc_ = gst_element_factory_make("appsrc", "mysrc");
-    omxh265enc_ = gst_element_factory_make("omxh265enc", "omxh265enc");
-    h265parse_ = gst_element_factory_make("h265parse", "h265parse");
+    videoconvert_ = gst_element_factory_make("videoconvert", "videoconvert");
+    omxh265enc_ = gst_element_factory_make("omxh265enc", "encoder");
+    h265parse_ = gst_element_factory_make("h265parse", "parse");
     tee_ = gst_element_factory_make("tee", "tee");
     streamQueue_ = gst_element_factory_make("queue", "streamqueue");
     saveQueue_ = gst_element_factory_make("queue", "savequeue");
     rtph265pay_ = gst_element_factory_make("rtph265pay", "rtph265pay");
     udpSink_ = gst_element_factory_make("udpsink", "udpsink");
+    mpegtsmux_ = gst_element_factory_make("matroskamux", "mux");
     splitMuxSink_ = gst_element_factory_make("splitmuxsink", "splitmuxsink");
-    mpegtsmux_ = gst_element_factory_make("mp4mux", "mux");
-    printf("stop0\n");
-    filterCaps_ = gst_element_factory_make("capsfilter", NULL);
-    GstCaps *capsFilter;
-    capsFilter = gst_caps_new_simple ("video/x-h265",
-                   "stream-format", G_TYPE_STRING, "hvc1",
-                   NULL);
-    g_object_set (G_OBJECT (filterCaps_), "caps", capsFilter, NULL);
-    gst_caps_unref (capsFilter);
 
     // set properties for element
     // set appsrc
@@ -258,8 +264,8 @@ int StreamingManager::initPipeline()
     // set splitmuxsink
     saveFolder_ = getFileNameByTime();
     DirTool::makeDir(saveFolder_);
-    printf("SaveFolder = %s\n", saveFolder_.c_str());
-    std::string filePattern = saveFolder_ + "/%04d-video.mp4";
+    QDTLog::debug("SaveFolder = {}", saveFolder_.c_str());
+    std::string filePattern = saveFolder_ + "/%07d-video.mkv";
     g_object_set(G_OBJECT(splitMuxSink_),
                  "muxer", mpegtsmux_,
                  "location", filePattern.c_str(),
@@ -267,10 +273,10 @@ int StreamingManager::initPipeline()
 
     // create pipeline and link manually
     pipeline_ = gst_pipeline_new("mypipeline");
-    gst_bin_add_many(GST_BIN(pipeline_), appSrc_, omxh265enc_,h265parse_, tee_,
+    gst_bin_add_many(GST_BIN(pipeline_), appSrc_, videoconvert_, omxh265enc_,h265parse_, tee_,
                      streamQueue_, rtph265pay_, udpSink_,
-                     saveQueue_, mpegtsmux_, splitMuxSink_, NULL);
-    if(gst_element_link_many(appSrc_, omxh265enc_, h265parse_, tee_, NULL) != TRUE)
+                     saveQueue_, splitMuxSink_, NULL);
+    if(gst_element_link_many(appSrc_, videoconvert_, omxh265enc_, h265parse_, tee_, NULL) != TRUE)
     {
         g_print("Link fail: appsrc, videoconvert, omxh265enc, h265parse, tee\n");
         return -1;
@@ -278,42 +284,33 @@ int StreamingManager::initPipeline()
 
     if(gst_element_link_many(streamQueue_, rtph265pay_, udpSink_, NULL) != TRUE)
     {
-        g_print("Link fail: streamQueue, rtph265pay, udpSink\n");
+        g_print("Link fail: streamQueue, filterCaps_, rtph265pay, udpSink\n");
         return -1;
     }
-    if(gst_element_link_many(saveQueue_, mpegtsmux_, splitMuxSink_, NULL) != TRUE)
+    if(gst_element_link_many(saveQueue_, splitMuxSink_, NULL) != TRUE)
     {
         g_print("Link fail: saveQueue, mpegtsmux, splitMuxSink\n");
         return -1;
     }
 
+    GstPad *queueStreamPad;
     teeStreamPad_ = gst_element_get_request_pad(tee_, "src_%u");
-    GstPad *queueStreamPad = gst_element_get_static_pad(streamQueue_, "sink");
+    queueStreamPad = gst_element_get_static_pad(streamQueue_, "sink");
     gst_pad_link(teeStreamPad_, queueStreamPad);
     teeSavePad_ = gst_element_get_request_pad(tee_, "src_%u");
     queueStreamPad = gst_element_get_static_pad(saveQueue_, "sink");
     gst_pad_link(teeSavePad_, queueStreamPad);
     gst_object_unref(queueStreamPad);
 
-//    pipelineStr_ = "appsrc name=mysrc stream-type=0 is-live=true format=3 ! videoconvert ! omxh265enc control-rate=2 target-bitrate=" + std::to_string(streamConfig_->getProperty(StreamProperty::BITRATE).toInt()) +
-//            " ! video/x-h265, stream-format=(string)byte-stream ! h265parse ! rtph265pay mtu=4096 config-interval=1 "
-//            " ! udpsink auto-multicast=true host=" +
-//            streamConfig_->getProperty(StreamProperty::HOSTIP).toString() +
-//            " port=" + std::to_string(streamConfig_->getProperty(StreamProperty::HOSTPORT).toInt()) +
-//            " async=true sync=true";
-
-    //    // save video
-    //    pipeline__str = "appsrc name=mysrc stream-type=0 is-live=true format=3 ! videoconvert ! omxh265enc control-rate=2 target-bitrate="
-    //                     + std::to_string(streamConfig_->getBitRate()) +
-    //                     " ! video/x-h265, stream-format=(string)byte-stream ! h265parse ! tee name=t t. ! queue ! mpegtsmux ! filesink location=video.mp4";
-
-
-
     GstAppSrcCallbacks cbs;
     cbs.need_data = wrapperOnNeedData;
     cbs.enough_data = wrapperOnEnoughData;
     cbs.seek_data = wrapperOnSeekData;
     gst_app_src_set_callbacks(GST_APP_SRC_CAST(appSrc_), &cbs, this, NULL);
+    GstPad *streamsinkpad = gst_element_get_static_pad(streamQueue_, "src");
+//    gst_pad_add_probe(streamsinkpad, GST_PAD_PROBE_TYPE_BUFFER,
+//                      static_cast<GstPadProbeCallback>(wrapDataPadProbeCb), nullptr, nullptr);
+    gst_object_unref(streamsinkpad);
     return 0;
 }
 
@@ -343,25 +340,40 @@ void StreamingManager::run()
 
 void StreamingManager::freePipeline()
 {
-    gst_bin_remove(GST_BIN(pipeline_), gst_bin_get_by_name(GST_BIN(pipeline_), "mysrc"));
-    gst_bin_remove(GST_BIN(pipeline_), gst_bin_get_by_name(GST_BIN(pipeline_), "videoconvert"));
-    gst_bin_remove(GST_BIN(pipeline_), gst_bin_get_by_name(GST_BIN(pipeline_), "encoder"));
-    gst_bin_remove(GST_BIN(pipeline_), gst_bin_get_by_name(GST_BIN(pipeline_), "parse"));
-    gst_bin_remove(GST_BIN(pipeline_), gst_bin_get_by_name(GST_BIN(pipeline_), "rtph265pay"));
-    gst_bin_remove(GST_BIN(pipeline_), gst_bin_get_by_name(GST_BIN(pipeline_), "sink"));
-    gst_element_set_state(gst_bin_get_by_name(GST_BIN(pipeline_), "mysrc"), GST_STATE_NULL);
-    gst_element_set_state(gst_bin_get_by_name(GST_BIN(pipeline_), "videoconvert"), GST_STATE_NULL);
-    gst_element_set_state(gst_bin_get_by_name(GST_BIN(pipeline_), "encoder"), GST_STATE_NULL);
-    gst_element_set_state(gst_bin_get_by_name(GST_BIN(pipeline_), "parse"), GST_STATE_NULL);
-    gst_element_set_state(gst_bin_get_by_name(GST_BIN(pipeline_), "rtph265pay"), GST_STATE_NULL);
-    gst_element_set_state(gst_bin_get_by_name(GST_BIN(pipeline_), "sink"), GST_STATE_NULL);
-    gst_element_set_state(GST_ELEMENT(pipeline_), GST_STATE_NULL);
-    gst_object_unref(gst_bin_get_by_name(GST_BIN(pipeline_), "mysrc"));
-    gst_object_unref(gst_bin_get_by_name(GST_BIN(pipeline_), "videoconvert"));
-    gst_object_unref(gst_bin_get_by_name(GST_BIN(pipeline_), "encoder"));
-    gst_object_unref(gst_bin_get_by_name(GST_BIN(pipeline_), "parse"));
-    gst_object_unref(gst_bin_get_by_name(GST_BIN(pipeline_), "rtph265pay"));
-    gst_object_unref(gst_bin_get_by_name(GST_BIN(pipeline_), "sink"));
+    gst_bin_remove(GST_BIN(pipeline_), appSrc_);
+    gst_bin_remove(GST_BIN(pipeline_), videoconvert_);
+    gst_bin_remove(GST_BIN(pipeline_), omxh265enc_);
+    gst_bin_remove(GST_BIN(pipeline_), h265parse_);
+    gst_bin_remove(GST_BIN(pipeline_), tee_);
+    gst_bin_remove(GST_BIN(pipeline_), streamQueue_);
+    gst_bin_remove(GST_BIN(pipeline_), rtph265pay_);
+    gst_bin_remove(GST_BIN(pipeline_), udpSink_);
+    gst_bin_remove(GST_BIN(pipeline_), saveQueue_);
+    gst_bin_remove(GST_BIN(pipeline_), splitMuxSink_);
+//    gst_element_set_state(appSrc_, GST_STATE_NULL);
+//    gst_element_set_state(videoconvert_, GST_STATE_NULL);
+//    gst_element_set_state(omxh265enc_, GST_STATE_NULL);
+//    gst_element_set_state(h265parse_, GST_STATE_NULL);
+//    gst_element_set_state(tee_, GST_STATE_NULL);
+//    gst_element_set_state(streamQueue_, GST_STATE_NULL);
+//    gst_element_set_state(rtph265pay_, GST_STATE_NULL);
+//    gst_element_set_state(udpSink_, GST_STATE_NULL);
+//    gst_element_set_state(saveQueue_, GST_STATE_NULL);
+//    gst_element_set_state(splitMuxSink_, GST_STATE_NULL);
+//    gst_element_set_state(GST_ELEMENT(pipeline_), GST_STATE_NULL);
+
+//    gst_object_unref(appSrc_);
+//    gst_object_unref(videoconvert_);
+//    gst_object_unref(omxh265enc_);
+//    gst_object_unref(h265parse_);
+//    gst_object_unref(tee_);
+//    gst_object_unref(streamQueue_);
+//    gst_object_unref(rtph265pay_);
+//    gst_object_unref(udpSink_);
+//    gst_object_unref(saveQueue_);
+//    gst_object_unref(splitMuxSink_);
+    gst_object_unref(teeStreamPad_);
+    gst_object_unref(teeSavePad_);
     gst_object_unref(pipeline_);
 }
 std::string StreamingManager::getFileNameByTime() {
@@ -384,6 +396,35 @@ void StreamingManager::correctTimeLessThanTen(std::string &_inputStr, int _time)
         _inputStr += std::to_string(_time);
     } else {
         _inputStr += std::to_string(_time);
+    }
+}
+
+gboolean StreamingManager::printField(GQuark field, const GValue *value, gpointer pfx)
+{
+    gchar *str = gst_value_serialize (value);
+    g_print ("%s  %15s: %s\n", (gchar *) pfx, g_quark_to_string (field), str);
+    g_free (str);
+    return TRUE;
+}
+
+void StreamingManager::printCaps(const GstCaps *caps, const gchar *pfx)
+{
+    guint i;
+    g_return_if_fail (caps != nullptr);
+
+    if (gst_caps_is_any (caps)) {
+        g_print ("%sANY\n", pfx);
+        return;
+    }
+    if (gst_caps_is_empty (caps)) {
+        g_print ("%sEMPTY\n", pfx);
+        return;
+    }
+
+    for (i = 0; i < gst_caps_get_size (caps); i++) {
+        GstStructure *structure = gst_caps_get_structure (caps, i);
+        g_print ("%s%s\n", pfx, gst_structure_get_name (structure));
+        gst_structure_foreach (structure, printField, (gpointer) pfx);
     }
 }
 }

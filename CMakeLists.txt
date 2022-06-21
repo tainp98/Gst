@@ -92,7 +92,7 @@ find_package(spdlog REQUIRED)
 include_directories(${PROJECT_SOURCE_DIR})
 
 file(GLOB SOURCES ${PROJECT_SOURCE_DIR}/main.cpp
-		  ${PROJECT_SOURCE_DIR}/SplitMuxSink.cpp
+		  ${PROJECT_SOURCE_DIR}/ChangeSource.cpp
 		  ${PROJECT_SOURCE_DIR}/DirTool.cpp)
 
 

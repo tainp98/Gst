@@ -202,6 +202,7 @@ void SplitMuxSink::init(int argc, char** argv)
     splitMuxSink_ = gst_element_factory_make("splitmuxsink", "splitmuxsink");
     mpegtsmux_ = gst_element_factory_make("mp4mux", "mux");
 
+
     // setup elements
     GstCaps *caps;
     caps = gst_caps_new_simple ("video/x-h265",
@@ -278,31 +279,31 @@ void SplitMuxSink::start()
     loop_ = g_main_loop_new(nullptr, FALSE);
     gst_bus_add_watch(GST_ELEMENT_BUS(pipeline_), wrapBusCb, this);
     g_main_loop_run(loop_);
-//    std::string listFile = DirTool::listFileInFolder("SaveVideo");
-//    auto vecFile = DirTool::splitString(listFile, ",");
-//    std::cout << "number file = " << vecFile.size() << "\n";
-//    std::cout << "Size Of SaveVideo = " << DirTool::sizeOfFolder("SaveVideo") << "\n";
-//    std::map<int, std::string> mapFile;
+    std::string listFile = DirTool::listFileInFolder("SaveVideo");
+    auto vecFile = DirTool::splitString(listFile, ",");
+    std::cout << "number file = " << vecFile.size() << "\n";
+    std::cout << "Size Of SaveVideo = " << DirTool::sizeOfFolder("SaveVideo") << "\n";
+    std::map<int, std::string> mapFile;
 
-//    for(auto it = vecFile.begin(); it != vecFile.end(); it++)
-//    {
-//        mapFile[std::stoi(DirTool::splitString(*it, "-")[0])] = *it;
-//    }
-//    int count = 0;
-//    for(auto it = mapFile.begin(); it != mapFile.end(); it++)
-//    {
-//        std::string fileName = "SaveVideo/" + it->second;
-//        DirTool::removeFile(fileName.c_str());
-////        remove(fileName.c_str());
-//        count++;
-//        if(count == 10)
-//            break;
-//    }
-//    listFile = DirTool::listFileInFolder("SaveVideo");
-//    auto vecFile2 = DirTool::splitString(listFile, ",");
-//    std::cout << "number file = " << vecFile2.size() << "\n";
-////    std::cout << "ListFile In SaveVideo = " << DirTool::listFileInFolder("SaveVideo") << "\n";
-//    std::cout << "Size Of SaveVideo = " << DirTool::sizeOfFolder("SaveVideo") << "\n";
+    for(auto it = vecFile.begin(); it != vecFile.end(); it++)
+    {
+        mapFile[std::stoi(DirTool::splitString(*it, "-")[0])] = *it;
+    }
+    int count = 0;
+    for(auto it = mapFile.begin(); it != mapFile.end(); it++)
+    {
+        std::string fileName = "SaveVideo/" + it->second;
+        DirTool::removeFile(fileName.c_str());
+//        remove(fileName.c_str());
+        count++;
+        if(count == 10)
+            break;
+    }
+    listFile = DirTool::listFileInFolder("SaveVideo");
+    auto vecFile2 = DirTool::splitString(listFile, ",");
+    std::cout << "number file = " << vecFile2.size() << "\n";
+//    std::cout << "ListFile In SaveVideo = " << DirTool::listFileInFolder("SaveVideo") << "\n";
+    std::cout << "Size Of SaveVideo = " << DirTool::sizeOfFolder("SaveVideo") << "\n";
 
 }
 
